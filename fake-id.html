@@ -1,0 +1,116 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fake ID Detection | SentinelX</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+    <a href="index.html" class="brand">
+        <span class="brand-mark">✦</span>
+        Sentinel<span>X</span>
+    </a>
+    <nav>
+        <a href="index.html">Home</a>
+        <a href="dashboard.html">Dashboard</a>
+    </nav>
+</header>
+
+<main class="tool-page">
+
+    <section class="tool-hero">
+        <p class="eyebrow">TOOL 01 · IDENTITY PROTECTION</p>
+        <h1>Is that profile <span>really genuine?</span></h1>
+        <p>Learn to recognise possible impersonation signs before trusting a suspicious social media account.</p>
+    </section>
+
+    <section class="glass-panel">
+        <h2>Profile Safety Review</h2>
+        <p class="helper-text">Enter only a public profile URL or a description of suspicious behaviour. Never enter passwords or private account details.</p>
+
+        <form id="profileForm">
+            <label for="profileUrl">Public profile URL (optional)</label>
+            <input
+                type="url"
+                id="profileUrl"
+                placeholder="https://example.com/profile"
+            >
+
+            <label for="profileSigns">Warning signs you noticed</label>
+            <div class="check-list">
+                <label><input type="checkbox" name="sign" value="new"> Recently created or unusually empty profile</label>
+                <label><input type="checkbox" name="sign" value="copy"> Copied photos or another person's identity</label>
+                <label><input type="checkbox" name="sign" value="urgent"> Urgent requests for money or personal details</label>
+                <label><input type="checkbox" name="sign" value="links"> Unexpected links or suspicious messages</label>
+                <label><input type="checkbox" name="sign" value="mismatch"> Name, details or behaviour do not match</label>
+            </div>
+
+            <button type="submit" class="primary-button">Review Warning Signs ↗</button>
+        </form>
+
+        <div id="profileResult" class="result-panel" aria-live="polite" hidden></div>
+    </section>
+
+    <section class="info-grid">
+        <article class="glass-panel">
+            <h3>🔎 Verify independently</h3>
+            <p>Check whether the person can confirm their identity through a trusted channel you already know.</p>
+        </article>
+        <article class="glass-panel">
+            <h3>🔒 Protect your details</h3>
+            <p>Never share OTPs, passwords, payment PINs or identity documents with an unverified profile.</p>
+        </article>
+        <article class="glass-panel">
+            <h3>🚩 Report suspicious activity</h3>
+            <p>Save relevant evidence safely and use the platform's official report and block options.</p>
+        </article>
+    </section>
+
+    <p class="demo-note">Important: This prototype reviews selected warning signs only. It cannot verify a person's real identity or prove that an account is fake.</p>
+
+    <footer class="site-footer">
+        <a href="dashboard.html">← Back to Dashboard</a>
+        <span>SentinelX SocialShield · Demo</span>
+    </footer>
+
+</main>
+
+<script>
+document.getElementById("profileForm").addEventListener("submit", function(event) {
+    event.preventDefault();
+
+    const signs = document.querySelectorAll('input[name="sign"]:checked');
+    const result = document.getElementById("profileResult");
+    const count = signs.length;
+
+    let heading;
+    let message;
+
+    if (count === 0) {
+        heading = "No warning signs selected";
+        message = "Select any signs you have noticed, then review the guidance. This does not mean the profile is safe.";
+    } else if (count <= 2) {
+        heading = "Caution: Review this profile";
+        message = "You selected " + count + " warning sign(s). Verify the identity independently before responding or sharing information.";
+    } else {
+        heading = "High caution: Multiple warning signs";
+        message = "You selected " + count + " warning signs. Avoid sending money or personal information. Consider reporting the profile through the platform.";
+    }
+
+    result.innerHTML = "";
+    const title = document.createElement("h3");
+    title.textContent = heading;
+    const detail = document.createElement("p");
+    detail.textContent = message;
+    result.append(title, detail);
+    result.hidden = false;
+    result.scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
+</script>
+
+</body>
+</html>
