@@ -1,433 +1,588 @@
 
 "use strict";
 
-/* =========================================
-   SENTINELX SOCIALSHIELD
-   Browser-only educational prototype
-========================================= */
+/* =====================================
+   SENTINELX - COMPLETE WEBSITE JAVASCRIPT
+   ===================================== */
 
-const $ = (id) => document.getElementById(id);
+const DEMO_OTP = "482916";
+const STORAGE_KEY = "sentinelXDemoReports";
 
-const historyItems = [];
-const MAX_HISTORY = 8;
+let alarmContext = null;
+let alarmTimer = null;
+let alarmCount = 0;
 
-/* Safely display text as plain text, not HTML. */
-function setText(id, value) {
-  const element = $(id);
-  if (element) element.textContent = value;
-}
+/* ---------- WEBSITE NAVIGATION ---------- */
 
-/* Keep scores inside the 0–100 range. */
-function clampScore(score) {
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
+function showView(viewId) {
+  const target = document.getElementById(viewId);
 
-/* Map scores to a preliminary warning level. */
-function getLevel(score) {
-  if (score >= 60) return "high";
-  if (score >= 30) return "medium";
-  return "low";
-}
-
-function getLevelLabel(level) {
-  return {
-    low: "FEWER WARNING SIGNS",
-    medium: "REVIEW CAREFULLY",
-    high: "MULTIPLE WARNING SIGNS"
-  }[level];
-}
-
-/* Display result and its explanation. */
-function showResult(prefix, score, title, summary, signals) {
-  const level = getLevel(score);
-
-  const result = $(prefix + "Result");
-  const badge = $(prefix + "Badge");
-
-  result.classList.remove("hidden");
-  badge.className = "result-badge " + level;
-  badge.textContent = getLevelLabel(level);
-
-  setText(prefix + "Score", score + " / 100");
-  setText(prefix + "Title", title);
-  setText(prefix + "Summary", summary);
-
-  const list = $(prefix + "Signals");
-  list.replaceChildren();
-
-  signals.forEach((signal) => {
-    const item = document.createElement("li");
-    item.textContent = signal;
-    list.appendChild(item);
-  });
-
-  result.scrollIntoView({
-    behavior: "smooth",
-    block: "nearest"
-  });
-
-  return level;
-}
-
-/* =========================================
-   RECENT REVIEW HISTORY
-========================================= */
-
-function addHistory(type, item, score) {
-  historyItems.unshift({
-    type,
-    item,
-    score,
-    time: new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit"
-    })
-  });
-
-  if (historyItems.length > MAX_HISTORY) {
-    historyItems.pop();
-  }
-
-  renderHistory();
-}
-
-function renderHistory() {
-  const body = $("historyBody");
-  body.replaceChildren();
-
-  if (historyItems.length === 0) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-
-    cell.colSpan = 4;
-    cell.className = "empty-state";
-    cell.textContent =
-      "No reviews yet. Try one of the checks above.";
-
-    row.appendChild(cell);
-    body.appendChild(row);
+  if (!target) {
+    console.warn("Page not found:", viewId);
     return;
   }
 
-  historyItems.forEach((entry) => {
-    const row = document.createElement("tr");
-
-    const typeCell = document.createElement("td");
-    typeCell.textContent = entry.type;
-
-    const itemCell = document.createElement("td");
-    itemCell.textContent = entry.item;
-
-    const scoreCell = document.createElement("td");
-    const chip = document.createElement("span");
-    chip.className = "score-chip " + getLevel(entry.score);
-    chip.textContent = entry.score + " / 100";
-    scoreCell.appendChild(chip);
-
-    const timeCell = document.createElement("td");
-    timeCell.textContent = entry.time;
-
-    row.append(typeCell, itemCell, scoreCell, timeCell);
-    body.appendChild(row);
-  });
-}
-
-$("clearHistory").addEventListener("click", () => {
-  historyItems.length = 0;
-  renderHistory();
-});
-
-/* =========================================
-   1. SOCIAL ACCOUNT WARNING-SIGNAL CHECK
-========================================= */
-
-$("accountForm").addEventListener("submit", (event) => {
-  event.preventDefault();
-
-  let score = 0;
-  const signals = [];
-
-  const profileValue = $("profileUrl").value.trim();
-  const accountAge = $("accountAge").value;
-  const photoStatus = $("photoStatus").value;
-  const bioText = $("bioText").value.trim().toLowerCase();
-  const impersonation = $("impersonation").checked;
-  const moneyRequest = $("moneyRequest").checked;
-
-  if (profileValue) {
-    try {
-      const profile = new URL(profileValue);
-
-      if (!["http:", "https:"].includes(profile.protocol)) {
-        signals.push("The profile URL uses an unusual protocol.");
-        score += 20;
-      } else {
-        signals.push("A profile URL was provided; this prototype does not visit it.");
-      }
-    } catch {
-      signals.push("The profile URL format appears invalid.");
-      score += 15;
-    }
-  } else {
-    signals.push("No profile URL provided; fewer details are available.");
-  }
-
-  if (accountAge === "new") {
-    score += 15;
-    signals.push("The account is reported as recently created.");
-  } else if (accountAge === "old") {
-    signals.push("The account is reported as older; age alone does not prove trust.");
-  } else {
-    signals.push("Account age is unknown.");
-  }
-
-  if (photoStatus === "copied") {
-    score += 20;
-    signals.push("The profile photo may be copied or reused.");
-  } else if (photoStatus === "normal") {
-    signals.push("No obvious photo concern was reported; this is not verification.");
-  } else {
-    signals.push("Photo status is unknown.");
-  }
-
-  if (impersonation) {
-    score += 25;
-    signals.push("You suspect the account may be impersonating someone.");
-  }
-
-  if (moneyRequest) {
-    score += 35;
-    signals.push("Unexpected money, OTP, or urgent-action requests are a serious warning sign.");
-  }
-
-  const bioPatterns = [
-    {
-      pattern: /\b(otp|one.time.password|verification code)\b/,
-      message: "The bio mentions an OTP or verification code."
-    },
-    {
-      pattern: /\b(gift card|send money|wire transfer|crypto payment)\b/,
-      message: "The bio mentions a payment-related phrase that deserves review."
-    },
-    {
-      pattern: /\b(account suspended|account blocked|urgent action)\b/,
-      message: "The bio uses urgent account-related wording."
-    },
-    {
-      pattern: /\b(official support|customer support|help desk)\b/,
-      message: "Support-related claims should be verified through the organisation's official website."
-    }
-  ];
-
-  bioPatterns.forEach(({ pattern, message }) => {
-    if (pattern.test(bioText)) {
-      score += 10;
-      signals.push(message);
-    }
+  document.querySelectorAll(".view").forEach(view => {
+    view.classList.toggle("active", view.id === viewId);
   });
 
-  score = clampScore(score);
+  const nav = document.getElementById("navLinks");
+  if (nav) nav.classList.remove("active");
 
-  let title = "Review the account carefully";
-  let summary =
-    "The score reflects only the warning signs entered into this form.";
-
-  if (score >= 60) {
-    title = "Several warning signs were reported";
-    summary =
-      "Pause before interacting. Verify the account through a separate trusted channel.";
-  } else if (score >= 30) {
-    title = "Some warning signs need attention";
-    summary =
-      "Review the listed signals and independently verify the account.";
-  } else {
-    title = "Few warning signs were entered";
-    summary =
-      "A low score does not mean the account is genuine or safe.";
-  }
-
-  showResult("account", score, title, summary, signals);
-
-  addHistory(
-    "Account",
-    profileValue || "Profile details",
-    score
-  );
-});
-
-/* =========================================
-   2. PHISHING URL WARNING CHECKER
-========================================= */
-
-function inspectUrl(rawValue) {
-  const signals = [];
-  let score = 0;
-  let parsedUrl;
-
-  const value = rawValue.trim();
-
-  if (!value) {
-    return {
-      valid: false,
-      score: 0,
-      signals: ["Enter a URL to check."]
-    };
-  }
-
-  if (/\s/.test(value)) {
-    return {
-      valid: false,
-      score: 0,
-      signals: ["The URL contains spaces. Check that you pasted the complete link."]
-    };
-  }
-
-  /* Parse the URL without opening it or sending it anywhere. */
-  try {
-    const candidate = /^https?:\/\//i.test(value)
-      ? value
-      : "https://" + value;
-
-    parsedUrl = new URL(candidate);
-  } catch {
-    return {
-      valid: false,
-      score: 0,
-      signals: ["This does not look like a valid web URL."]
-    };
-  }
-
-  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-    return {
-      valid: false,
-      score: 0,
-      signals: ["Only HTTP and HTTPS web URLs are supported."]
-    };
-  }
-
-  const hostname = parsedUrl.hostname.toLowerCase();
-  const fullUrl = parsedUrl.href.toLowerCase();
-
-  if (!hostname || !hostname.includes(".")) {
-    score += 20;
-    signals.push("The hostname is unusual or incomplete.");
-  }
-
-  if (parsedUrl.username || parsedUrl.password) {
-    score += 25;
-    signals.push("The URL contains text before the @ symbol that may disguise the destination.");
-  }
-
-  if (hostname.startsWith("xn--") || hostname.includes(".xn--")) {
-    score += 20;
-    signals.push("The domain contains an internationalised/punycode label. Check for look-alike characters.");
-  }
-
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
-    score += 20;
-    signals.push("The destination uses an IP address instead of a familiar domain name.");
-  }
-
-  if (hostname.split(".").length >= 5) {
-    score += 10;
-    signals.push("The domain has many subdomain levels. Verify the actual registered domain.");
-  }
-
-  if (hostname.length > 35) {
-    score += 10;
-    signals.push("The hostname is unusually long. Read it carefully.");
-  }
-
-  if (parsedUrl.protocol === "http:") {
-    score += 10;
-    signals.push("The link uses HTTP rather than encrypted HTTPS.");
-  }
-
-  const suspiciousTerms = [
-    "verify-account",
-    "account-verify",
-    "login-secure",
-    "secure-login",
-    "password-reset",
-    "free-gift",
-    "claim-prize",
-    "wallet-connect",
-    "urgent-verify"
-  ];
-
-  if (suspiciousTerms.some((term) => fullUrl.includes(term))) {
-    score += 15;
-    signals.push("The URL contains wording commonly used in deceptive login, prize, or verification links.");
-  }
-
-  const riskyExtensions = [
-    ".zip", ".exe", ".scr", ".apk", ".msi", ".bat"
-  ];
-
-  if (riskyExtensions.some((ext) =>
-    parsedUrl.pathname.toLowerCase().endsWith(ext)
-  )) {
-    score += 20;
-    signals.push("The URL appears to point to a potentially risky downloadable file.");
-  }
-
-  if (parsedUrl.hostname.split(".").some((label) => label.length > 30)) {
-    score += 10;
-    signals.push("A domain label is unusually long.");
-  }
-
-  if (signals.length === 0) {
-    signals.push("No configured warning pattern was detected.");
-    signals.push("This does not establish that the website is safe.");
-  }
-
-  return {
-    valid: true,
-    hostname,
-    score: clampScore(score),
-    signals
-  };
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-$("phishingForm").addEventListener("submit", (event) => {
-  event.preventDefault();
+function toggleMenu() {
+  document.getElementById("navLinks")?.classList.toggle("active");
+}
 
-  const rawValue = $("phishingUrl").value;
-  const result = inspectUrl(rawValue);
+/* Compatibility with older buttons */
+function openService(serviceId) {
+  if (document.getElementById(serviceId)) {
+    showView(serviceId);
+  }
+}
 
-  if (!result.valid) {
+/* ---------- 1. FAKE ID DETECTOR ---------- */
+
+function checkFakeProfile() {
+  const username =
+    document.getElementById("profileUsername").value.trim();
+
+  const followersValue =
+    document.getElementById("profileFollowers").value;
+
+  const followingValue =
+    document.getElementById("profileFollowing").value;
+
+  const ageValue =
+    document.getElementById("profileAge").value;
+
+  const result = document.getElementById("profileResult");
+
+  if (!username) {
+    showResult(result, "Please enter a username.", "warning");
+    return;
+  }
+
+  const followers = Number(followersValue || 0);
+  const following = Number(followingValue || 0);
+  const age = Number(ageValue || 0);
+
+  if (
+    !Number.isFinite(followers) ||
+    !Number.isFinite(following) ||
+    !Number.isFinite(age) ||
+    followers < 0 || following < 0 || age < 0
+  ) {
+    showResult(result, "Enter valid, non-negative numbers.", "warning");
+    return;
+  }
+
+  const reasons = [];
+
+  if (followers === 0 && following > 100) {
+    reasons.push("No followers but many accounts followed.");
+  }
+
+  if (following > 0 && following > Math.max(followers, 1) * 10) {
+    reasons.push("Following is much higher than followers.");
+  }
+
+  if (age > 0 && age < 30) {
+    reasons.push("The account may be very new.");
+  }
+
+  if (reasons.length > 0) {
     showResult(
-      "phishing",
-      0,
-      "URL needs to be checked",
-      "We could not complete the pattern check. Review the input and try again.",
-      result.signals
+      result,
+      "CAUTION: " + reasons.join(" ") +
+      " Verify the profile independently. These signs do not prove it is fake.",
+      "warning"
+    );
+  } else {
+    showResult(
+      result,
+      "No warning signs were detected by these basic checks. " +
+      "This does not prove the profile is genuine.",
+      "success"
+    );
+  }
+}
+
+/* ---------- COMMON RESULT MESSAGE ---------- */
+
+function showResult(element, message, type) {
+  if (!element) return;
+
+  element.textContent = message;
+  element.className = "result " + type;
+}
+
+/* ---------- 2. AI PHOTO MISUSE ---------- */
+
+function openReportingResource(platform) {
+  const resources = {
+    instagram: "https://help.instagram.com/",
+    facebook: "https://www.facebook.com/help/",
+    youtube: "https://support.google.com/youtube/",
+    stopncii: "https://stopncii.org/",
+    cybercrime: "https://cybercrime.gov.in/"
+  };
+
+  if (!resources[platform]) {
+    alert("Reporting resource not found.");
+    return;
+  }
+
+  window.open(
+    resources[platform],
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+/* ---------- 3. OTP & BANK FRAUD ---------- */
+
+/* Stops any active demo alarm. */
+function stopFraudAlarm() {
+  if (alarmTimer !== null) {
+    clearTimeout(alarmTimer);
+    alarmTimer = null;
+  }
+
+  if (alarmContext) {
+    const context = alarmContext;
+    alarmContext = null;
+
+    if (context.state !== "closed") {
+      context.close().catch(() => {});
+    }
+  }
+
+  alarmCount = 0;
+}
+
+/* Plays eight short warning beeps. */
+function playFraudAlarm() {
+  stopFraudAlarm();
+
+  const AudioContextClass =
+    window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContextClass) {
+    alert("Warning! Audio is unavailable. Please verify the situation.");
+    return;
+  }
+
+  try {
+    alarmContext = new AudioContextClass();
+  } catch (error) {
+    alert("Could not start the alarm.");
+    return;
+  }
+
+  const context = alarmContext;
+  alarmCount = 0;
+
+  context.resume().then(() => {
+    if (alarmContext !== context) return;
+
+    function beep() {
+      if (
+        alarmContext !== context ||
+        context.state === "closed"
+      ) {
+        return;
+      }
+
+      if (alarmCount >= 8) {
+        stopFraudAlarm();
+        return;
+      }
+
+      try {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+
+        oscillator.type = "sawtooth";
+        oscillator.frequency.value = 880;
+        gain.gain.value = 0.12;
+
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.16);
+
+        alarmCount++;
+        alarmTimer = setTimeout(beep, 280);
+      } catch (error) {
+        stopFraudAlarm();
+      }
+    }
+
+    beep();
+  }).catch(() => {
+    stopFraudAlarm();
+    alert("Audio could not start. Please verify manually.");
+  });
+}
+
+/* Checks only the fixed demonstration OTP. */
+function checkDemoOtp() {
+  const entered =
+    document.getElementById("demoOtp").value.trim();
+
+  const result = document.getElementById("otpAlert");
+
+  if (!/^\d{6}$/.test(entered)) {
+    stopFraudAlarm();
+
+    showResult(
+      result,
+      "Enter a six-digit demo OTP.",
+      "warning"
     );
     return;
   }
 
-  const score = result.score;
+  if (entered !== DEMO_OTP) {
+    showResult(
+      result,
+      "DEMO WARNING: OTP mismatch detected! " +
+      "This simulated alarm does not prove real fraud.",
+      "warning"
+    );
 
-  let title = "No configured warning pattern detected";
-  let summary =
-    "This is only a basic browser-side check. Do not treat this result as a safety guarantee.";
+    playFraudAlarm();
+  } else {
+    stopFraudAlarm();
 
-  if (score >= 60) {
-    title = "Multiple URL warning signs";
-    summary =
-      "Avoid opening the link until you independently verify its destination.";
-  } else if (score >= 30) {
-    title = "Review this URL carefully";
-    summary =
-      "Some patterns deserve attention. Verify the domain using a trusted source.";
+    showResult(
+      result,
+      "Demo OTP matched. This does not verify a real bank OTP or transaction.",
+      "success"
+    );
+  }
+}
+
+/* Banking situation guidance. */
+function analyseFraud() {
+  const situation =
+    document.getElementById("fraudSituation").value;
+
+  const result = document.getElementById("fraudAdvice");
+
+  const advice = {
+    otp:
+      "Never share an OTP with a caller. End the conversation and contact your bank using its official app or phone number.",
+
+    money:
+      "Contact your bank immediately about the unauthorised debit. In India, call 1930 promptly and report through the official cybercrime portal.",
+
+    call:
+      "End suspicious calls. Never share an OTP, PIN or password. Verify claims using your bank's official contact details.",
+
+    link:
+      "Stop entering details on the suspicious page. If you submitted banking information, contact your bank immediately and secure your account through official channels."
+  };
+
+  if (!advice[situation]) {
+    showResult(result, "Please select a situation first.", "warning");
+    return;
   }
 
-  showResult("phishing", score, title, summary, result.signals);
+  result.replaceChildren();
+  result.className = "result warning";
 
-  addHistory("URL", result.hostname, score);
+  const message = document.createElement("p");
+  message.textContent = advice[situation];
+
+  const link = document.createElement("a");
+  link.href = "https://cybercrime.gov.in/";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.textContent = "Open official Cyber Crime Portal ↗";
+
+  result.append(message, link);
+
+  if (situation === "money" || situation === "otp") {
+    playFraudAlarm();
+  } else {
+    stopFraudAlarm();
+  }
+}
+
+/* ---------- 4. LINK ATTACK CHECKER ---------- */
+
+function scanSuspiciousLink() {
+  const input =
+    document.getElementById("linkInput").value.trim();
+
+  const result = document.getElementById("linkResult");
+
+  if (!input) {
+    showResult(result, "Please enter a website URL.", "warning");
+    return;
+  }
+
+  let url;
+
+  try {
+    const prepared =
+      /^https?:\/\//i.test(input)
+        ? input
+        : "https://" + input;
+
+    url = new URL(prepared);
+  } catch (error) {
+    showResult(
+      result,
+      "Invalid URL. Please check the address.",
+      "warning"
+    );
+    return;
+  }
+
+  if (
+    !["https:", "http:"].includes(url.protocol) ||
+    !url.hostname
+  ) {
+    showResult(result, "Unsupported or invalid URL.", "warning");
+    return;
+  }
+
+  const host = url.hostname.toLowerCase();
+  const fullURL = url.href.toLowerCase();
+  const warnings = [];
+
+  if (url.protocol !== "https:") {
+    warnings.push("The URL does not use HTTPS.");
+  }
+
+  if (url.username || url.password) {
+    warnings.push("The URL contains unusual embedded login details.");
+  }
+
+  if (host.includes("xn--")) {
+    warnings.push("The domain uses encoded characters.");
+  }
+
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    warnings.push("The website uses an IP address instead of a domain.");
+  }
+
+  if (host.split(".").length > 4) {
+    warnings.push("The URL has a long subdomain structure.");
+  }
+
+  if (
+    /(login|verify|urgent|secure|banking|password|gift|prize|claim)/i
+      .test(fullURL)
+  ) {
+    warnings.push("The URL contains words sometimes used in scam messages.");
+  }
+
+  if (warnings.length > 0) {
+    showResult(
+      result,
+      "CAUTION: " + warnings.join(" ") +
+      " Do not enter credentials until you verify the site independently.",
+      "warning"
+    );
+  } else {
+    showResult(
+      result,
+      "No obvious warning signs were detected. This does not mean the website is safe.",
+      "success"
+    );
+  }
+}
+
+/* ---------- 5. NATIONWIDE SOS ---------- */
+
+function callEmergency(number) {
+  const phone = String(number).replace(/\D/g, "");
+
+  if (!phone) {
+    alert("Invalid phone number.");
+    return;
+  }
+
+  window.location.href = "tel:" + phone;
+}
+
+function openNearbyPolice() {
+  window.open(
+    "https://www.google.com/maps/search/police+station+near+me/",
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+function openCyberCrimePortal() {
+  window.open(
+    "https://cybercrime.gov.in/",
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+function reportFinancialFraud() {
+  const confirmed = confirm(
+    "If you lost money in online financial fraud, contact your bank immediately and call 1930 promptly. Open the official cybercrime portal?"
+  );
+
+  if (confirmed) openCyberCrimePortal();
+}
+
+/* ---------- 6. DIGITAL SAFETY CENTRE ---------- */
+
+/* Read reports stored in this browser. */
+function getReports() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+
+    if (!saved) return [];
+
+    const reports = JSON.parse(saved);
+    return Array.isArray(reports) ? reports : [];
+  } catch (error) {
+    console.warn("Could not read demo reports:", error);
+    return [];
+  }
+}
+
+/* Display report history safely. */
+function displayReports() {
+  const history = document.getElementById("reportHistory");
+  if (!history) return;
+
+  history.replaceChildren();
+
+  const reports = getReports();
+
+  if (reports.length === 0) {
+    history.textContent = "No demo reports created yet.";
+    return;
+  }
+
+  reports.forEach(report => {
+    const card = document.createElement("article");
+    card.className = "report-card";
+
+    const heading = document.createElement("strong");
+    heading.textContent = report.reference;
+
+    const type = document.createElement("p");
+    type.textContent = "Type: " + report.type;
+
+    const description = document.createElement("p");
+    description.textContent = "Description: " + report.description;
+
+    const date = document.createElement("small");
+    date.textContent = "Created: " + report.date;
+
+    const note = document.createElement("p");
+    note.textContent = "Demo only. Not sent to any authority.";
+
+    card.append(heading, type, description, date, note);
+    history.appendChild(card);
+  });
+}
+
+/* Create one demo report per form submission. */
+function handleIncidentSubmit(event) {
+  event.preventDefault();
+
+  const type = document.getElementById("incidentType").value;
+  const description =
+    document.getElementById("incidentDescription").value.trim();
+
+  const result = document.getElementById("incidentResult");
+
+  if (!type || !description) {
+    showResult(result, "Please complete all fields.", "warning");
+    return;
+  }
+
+  const report = {
+    reference: "SX-" + Date.now().toString().slice(-8),
+    type: type,
+    description: description,
+    date: new Date().toLocaleString()
+  };
+
+  const reports = getReports();
+  reports.unshift(report);
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
+  } catch (error) {
+    showResult(
+      result,
+      "Could not save the report in this browser.",
+      "warning"
+    );
+    return;
+  }
+
+  showResult(
+    result,
+    "Demo report created: " + report.reference +
+    ". It has NOT been sent to any authority.",
+    "success"
+  );
+
+  document.getElementById("incidentForm").reset();
+  displayReports();
+}
+
+function clearReports() {
+  if (!confirm("Delete all demo reports saved in this browser?")) {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    displayReports();
+
+    showResult(
+      document.getElementById("incidentResult"),
+      "Demo report history cleared.",
+      "success"
+    );
+  } catch (error) {
+    alert("Could not clear report history.");
+  }
+}
+
+/* ---------- INITIALIZE WEBSITE ---------- */
+
+document.addEventListener("DOMContentLoaded", function () {
+  const year = document.getElementById("currentYear");
+
+  if (year) {
+    year.textContent = new Date().getFullYear();
+  }
+
+  document.getElementById("checkDemoOtp")
+    ?.addEventListener("click", checkDemoOtp);
+
+  document.getElementById("stopAlarm")
+    ?.addEventListener("click", stopFraudAlarm);
+
+  document.getElementById("analyseFraud")
+    ?.addEventListener("click", analyseFraud);
+
+  document.getElementById("incidentForm")
+    ?.addEventListener("submit", handleIncidentSubmit);
+
+  document.getElementById("clearReportsBtn")
+    ?.addEventListener("click", clearReports);
+
+  displayReports();
+
+  console.log("SentinelX website loaded successfully.");
 });
-
-/* Initialise the activity table on page load. */
-renderHistory();
-
-console.log("SentinelX SocialShield is ready.");

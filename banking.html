@@ -1,0 +1,238 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SentinelX - Banking OTP Security</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #061326, #102f50);
+      color: white;
+    }
+
+    .container {
+      width: 90%;
+      max-width: 430px;
+      padding: 30px;
+      text-align: center;
+      background: #10243b;
+      border: 1px solid #2376a5;
+      border-radius: 20px;
+      box-shadow: 0 0 30px #008cff30;
+    }
+
+    h1 {
+      color: #48c6ff;
+    }
+
+    input {
+      width: 100%;
+      padding: 15px;
+      margin: 15px 0;
+      border: 1px solid #48c6ff;
+      border-radius: 8px;
+      font-size: 20px;
+      text-align: center;
+      letter-spacing: 5px;
+    }
+
+    button {
+      width: 100%;
+      padding: 13px;
+      margin: 7px 0;
+      border: none;
+      border-radius: 8px;
+      background: #0798e8;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #0879bd;
+    }
+
+    #result {
+      margin-top: 20px;
+      font-size: 19px;
+      font-weight: bold;
+      overflow-wrap: anywhere;
+    }
+
+    .success {
+      color: #45ff9a;
+    }
+
+    .danger {
+      color: #ff5555;
+      animation: blink 0.5s infinite;
+    }
+
+    @keyframes blink {
+      50% { opacity: 0.3; }
+    }
+
+    #demo {
+      color: #ffd166;
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <h1>🛡️ SentinelX</h1>
+    <h2>Banking OTP Security</h2>
+
+    <p>Enter the OTP to check its validity.</p>
+
+    <input
+      type="text"
+      id="otp"
+      inputmode="numeric"
+      maxlength="6"
+      placeholder="Enter 6-digit OTP"
+      autocomplete="off"
+    >
+
+    <button onclick="verifyOTP()">Verify OTP</button>
+    <button onclick="stopAlarm()">Stop Alarm</button>
+
+    <p id="result" role="status" aria-live="polite"></p>
+    <p id="demo"></p>
+  </main>
+
+  <script>
+    // DEMO ONLY: Generate a temporary test OTP.
+    let validOTP = generateOTP();
+    let alarmTimer = null;
+    let audioContext = null;
+    let alarmOscillator = null;
+
+    function generateOTP() {
+      return String(
+        Math.floor(100000 + Math.random() * 900000)
+      );
+    }
+
+    // Show the test OTP so you can try the project.
+    document.getElementById("demo").textContent =
+      "Demo OTP: " + validOTP;
+
+    function verifyOTP() {
+      const enteredOTP =
+        document.getElementById("otp").value.trim();
+
+      const result = document.getElementById("result");
+
+      stopAlarm();
+      result.className = "";
+
+      if (!/^\d{6}$/.test(enteredOTP)) {
+        result.textContent =
+          "⚠️ Enter a valid 6-digit format.";
+        result.className = "danger";
+        startAlarm();
+        return;
+      }
+
+      if (enteredOTP === validOTP) {
+        result.textContent = "✓ VALID OTP — Verification successful!";
+        result.className = "success";
+
+        // Prevent reuse of this demo OTP.
+        validOTP = generateOTP();
+        document.getElementById("demo").textContent =
+          "A new demo OTP is ready for the next test.";
+      } else {
+        result.textContent =
+          "🚨 INVALID OTP — Possible security risk!";
+        result.className = "danger";
+        startAlarm();
+      }
+    }
+
+    function startAlarm() {
+      stopAlarm();
+
+      try {
+        const AudioContextClass =
+          window.AudioContext || window.webkitAudioContext;
+
+        if (!AudioContextClass) {
+          document.getElementById("result").textContent +=
+            " Please use a browser that supports audio.";
+          return;
+        }
+
+        audioContext = new AudioContextClass();
+
+        audioContext.resume().then(() => {
+          if (!audioContext || audioContext.state === "closed") {
+            return;
+          }
+
+          alarmOscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+
+          alarmOscillator.type = "square";
+          alarmOscillator.frequency.value = 1000;
+          gain.gain.value = 0.25;
+
+          alarmOscillator.connect(gain);
+          gain.connect(audioContext.destination);
+          alarmOscillator.start();
+
+          let highTone = true;
+
+          alarmTimer = setInterval(() => {
+            if (alarmOscillator) {
+              highTone = !highTone;
+              alarmOscillator.frequency.value =
+                highTone ? 1200 : 700;
+            }
+          }, 250);
+        });
+      } catch (error) {
+        console.error("Audio could not start:", error);
+      }
+    }
+
+    function stopAlarm() {
+      if (alarmTimer !== null) {
+        clearInterval(alarmTimer);
+        alarmTimer = null;
+      }
+
+      if (alarmOscillator) {
+        try {
+          alarmOscillator.stop();
+          alarmOscillator.disconnect();
+        } catch (error) {}
+
+        alarmOscillator = null;
+      }
+
+      if (audioContext && audioContext.state !== "closed") {
+        audioContext.close();
+      }
+
+      audioContext = null;
+    }
+  </script>
+</body>
+</html>
